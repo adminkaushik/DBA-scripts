@@ -1,0 +1,4 @@
+select distinct user_id, session_id,session_serial#, sql_id, program, machine 
+from dba_hist_active_sess_history 
+where sample_time between to_date('20181203 1030','yyyymmdd hh24mi') and to_date('20181203 1130','yyyymmdd hh24mi')
+and event = 'direct path write temp';
