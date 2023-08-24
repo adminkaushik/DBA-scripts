@@ -1,0 +1,26 @@
+
+install components 
+
+catjava
+@?/javavm/install/initjvm.sql
+@?/xdk/admin/initxml.sql
+@?/xdk/admin/xmlja.sql
+@?/rdbms/admin/catjava.sql
+shutdown immediate;
+
+SDO spatial
+@?/md/admin/mdinst.sql
+
+ORDIM
+cd /opt/oracle/orauser/product/dbms/19c_eb/rdbms/admin
+perl catcon.pl -u SYS -d $ORACLE_HOME/ord/admin -b ordinst ordinst.sql '--pSYSAUX' '--pSYSAUX'
+perl catcon.pl -u SYS -d $ORACLE_HOME/ord/im/admin -b catim catim.sql
+execute sys.validate_ordim;
+
+oracle_text 
+@?/ctx/admin/catctx.sql pa55word SYSAUX TEMP NOLOCK
+
+Oracle OLAP
+SQL> conn / as SYSDBA
+SQL> @?/rdbms/admin/catqm.sql change_on_install XMLDB TEMP
+ @?/olap/admin/olap.sql SYSAUX TEMP;
