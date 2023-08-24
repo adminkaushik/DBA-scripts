@@ -1,0 +1,57 @@
+check what session is using more redo
+
+SELECT s.sid, s.serial#, s.username, s.program,
+  i.block_changes
+  FROM v$session s, v$sess_io i
+  WHERE s.sid = i.sid
+  ORDER BY 5 desc, 1, 2, 3, 4;
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+  SELECT * FROM (
+SELECT * FROM (
+SELECT TO_CHAR(FIRST_TIME, 'DD/MM') AS "DAY"
+, TO_NUMBER(SUM(DECODE(TO_CHAR(FIRST_TIME, 'HH24'), '00', 1, 0)), '999') "00:00"
+, TO_NUMBER(SUM(DECODE(TO_CHAR(FIRST_TIME, 'HH24'), '01', 1, 0)), '999') "01:00"
+, TO_NUMBER(SUM(DECODE(TO_CHAR(FIRST_TIME, 'HH24'), '02', 1, 0)), '999') "02:00"
+, TO_NUMBER(SUM(DECODE(TO_CHAR(FIRST_TIME, 'HH24'), '03', 1, 0)), '999') "03:00"
+, TO_NUMBER(SUM(DECODE(TO_CHAR(FIRST_TIME, 'HH24'), '04', 1, 0)), '999') "04:00"
+, TO_NUMBER(SUM(DECODE(TO_CHAR(FIRST_TIME, 'HH24'), '05', 1, 0)), '999') "05:00"
+, TO_NUMBER(SUM(DECODE(TO_CHAR(FIRST_TIME, 'HH24'), '06', 1, 0)), '999') "06:00"
+, TO_NUMBER(SUM(DECODE(TO_CHAR(FIRST_TIME, 'HH24'), '07', 1, 0)), '999') "07:00"
+, TO_NUMBER(SUM(DECODE(TO_CHAR(FIRST_TIME, 'HH24'), '08', 1, 0)), '999') "08:00"
+, TO_NUMBER(SUM(DECODE(TO_CHAR(FIRST_TIME, 'HH24'), '09', 1, 0)), '999') "09:00"
+, TO_NUMBER(SUM(DECODE(TO_CHAR(FIRST_TIME, 'HH24'), '10', 1, 0)), '999') "10:00"
+, TO_NUMBER(SUM(DECODE(TO_CHAR(FIRST_TIME, 'HH24'), '11', 1, 0)), '999') "11:00"
+, TO_NUMBER(SUM(DECODE(TO_CHAR(FIRST_TIME, 'HH24'), '12', 1, 0)), '999') "12:00"
+, TO_NUMBER(SUM(DECODE(TO_CHAR(FIRST_TIME, 'HH24'), '13', 1, 0)), '999') "13:00"
+, TO_NUMBER(SUM(DECODE(TO_CHAR(FIRST_TIME, 'HH24'), '14', 1, 0)), '999') "14:00"
+, TO_NUMBER(SUM(DECODE(TO_CHAR(FIRST_TIME, 'HH24'), '15', 1, 0)), '999') "15:00"
+, TO_NUMBER(SUM(DECODE(TO_CHAR(FIRST_TIME, 'HH24'), '16', 1, 0)), '999') "16:00"
+, TO_NUMBER(SUM(DECODE(TO_CHAR(FIRST_TIME, 'HH24'), '17', 1, 0)), '999') "17:00"
+, TO_NUMBER(SUM(DECODE(TO_CHAR(FIRST_TIME, 'HH24'), '18', 1, 0)), '999') "18:00"
+, TO_NUMBER(SUM(DECODE(TO_CHAR(FIRST_TIME, 'HH24'), '19', 1, 0)), '999') "19:00"
+, TO_NUMBER(SUM(DECODE(TO_CHAR(FIRST_TIME, 'HH24'), '20', 1, 0)), '999') "20:00"
+, TO_NUMBER(SUM(DECODE(TO_CHAR(FIRST_TIME, 'HH24'), '21', 1, 0)), '999') "21:00"
+, TO_NUMBER(SUM(DECODE(TO_CHAR(FIRST_TIME, 'HH24'), '22', 1, 0)), '999') "22:00"
+, TO_NUMBER(SUM(DECODE(TO_CHAR(FIRST_TIME, 'HH24'), '23', 1, 0)), '999') "23:00"
+FROM V$LOG_HISTORY
+WHERE extract(year FROM FIRST_TIME) = extract(year FROM sysdate)
+GROUP BY TO_CHAR(FIRST_TIME, 'DD/MM')
+) ORDER BY TO_DATE(extract(year FROM sysdate) || DAY, 'YYYY DD/MM') DESC
+) WHERE ROWNUM < 8;
+
+
+SELECT to_char(begin_interval_time,'YYYY_MM_DD HH24:MI') snap_time,
+        dhsso.object_name,
+        sum(db_block_changes_delta)
+  FROM dba_hist_seg_stat dhss,
+         dba_hist_seg_stat_obj dhsso,
+         dba_hist_snapshot dhs
+  WHERE dhs.snap_id = dhss.snap_id
+    AND dhs.instance_number = dhss.instance_number
+    AND dhss.obj# = dhsso.obj#
+    AND dhss.dataobj# = dhsso.dataobj#
+    AND begin_interval_time BETWEEN to_date('2018_07_28 4','YYYY_MM_DD HH24')
+                                           AND to_date('2018_07_28 7','YYYY_MM_DD HH24')
+  GROUP BY to_char(begin_interval_time,'YYYY_MM_DD HH24:MI'),
+           dhsso.object_name order by 3 desc;
