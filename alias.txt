@@ -1,0 +1,11 @@
+alias alert_err='grep -A 2 -B 2 -Ein "ora-|error" "$g_oracle_bdump"/alert_$ORACLE_SID.log | tail -200 | more'
+alias alert_tail='tail -350 "$g_oracle_bdump"/alert_$ORACLE_SID.log | more'
+
+alias alert='tail -100 $g_oracle_bdump/alert_$ORACLE_SID.log'
+alias scripts='cd $ORACLE_HOME/appsutil/scripts/$CONTEXT_NAME'
+alias share='cd $EBS_SHARE'
+alias clone='cd $ORACLE_HOME/appsutil/clone/bin'
+alias context='cd $ORACLE_HOME/appsutil'
+alias soe='set_ora_env'
+alias refresh='cd ~/scripts/adclone_scripts/$CONTEXT_NAME'
+alias back='cd /home/orauser/scripts/backup'
