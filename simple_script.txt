@@ -1,0 +1,9 @@
+export ORACLE_BASE=/opt/oracle/orauser
+export ORACLE_HOME=/opt/oracle/orauser/product/dbms/19c
+##export SYSADMPW=$(echo $ORACLE_SID | sed 's/PSCDB/$$$/g')
+##export DB_NAME=$(echo $ORACLE_SID | sed 's/PSCDB/##/g')
+sqlplus / as sysdba<<EOF
+spool 1.sql
+conn sysadm/"$SYSADMPW"@"$DB_NAME";
+exit
+EOF
