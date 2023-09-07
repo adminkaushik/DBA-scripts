@@ -1,0 +1,247 @@
+#!/bin/bash
+
+# Execute OPatch Cleanup
+#
+# Ref: https://mikedietrichde.com/2022/01/21/can-i-cleanup-the-previous-patch-bundles-with-opatch/
+#
+# SECTION 0) Set variables and run basic file path and OPatch binary validation
+# SECTION 1) Validate the OPatch version
+# SECTION 2) Identify the Oracle-deemed Inactive Patches that can be archived and installed
+# ** Check for previously archived patch zips in $ORACLE_HOME/.patch_storage, and compare with the results of opatch lsinventory -
+# SECTION 3) Execute OPatch with util -archive to zip the appropriate patches to NFS for long-term keeping
+# SECTION 4) Compare the contents of $ORACLE_ARCHIVE_GLOBAL and $ORACLE_ARCHIVE_LOCAL to determine and files that need to be copied to ARCHIVE and those that need to be purged from the base game.
+
+#### BEGIN SECTION 0
+
+### Set base variables
+# Temp location for testing, likely to change to something more common to all teams
+export OPATCH_ARCHIVE_GLOBAL=/nfs/oracle_sys_share/oracle.dba/downloads/dbms/19c/opatch_cleanup
+export OPATCH_ARCHIVE_LOCAL="${OPATCH_ARCHIVE_GLOBAL}/$(hostname)"
+
+# Hash table to store the Patch Storage Patch IDs and directories
+declare -A patchStorageArray
+# Standard array to store the OPatch Inactive Patch IDs
+declare -a opatchInactiveArray
+# Standard array to store Patch IDs to cleanup
+declare -a opatchCleanupArray
+### End set base variables
+
+test_script_prereqs(){
+    # Check for the OPatch binary; exit if it doesn't exist.
+    if [ -f "$ORACLE_HOME/OPatch/opatch" ]
+    then
+        echo "OPatch exists."
+    else    
+        echo "OPatch not found.  Verify the ORACLE_HOME: ${ORACLE_HOME} "
+        echo "Exiting."  
+        exit
+    fi
+    # Check for $OPATCH_ARCHIVE_GLOBAL; create it if it doesn't exist.
+    if [ -d "${OPATCH_ARCHIVE_GLOBAL}" ]
+    then
+        echo "OPATCH_ARCHIVE_GLOBAL exists: ${OPATCH_ARCHIVE_GLOBAL}"
+    else
+        mkdir ${OPATCH_ARCHIVE_GLOBAL}
+        echo "Created OPATCH_ARCHIVE_GLOBAL: ${OPATCH_ARCHIVE_GLOBAL}"
+    fi
+
+    # Check for $OPATCH_ARCHIVE_LOCAL; create it if it doesn't exist.
+    if [ -d "${OPATCH_ARCHIVE_LOCAL}" ]
+    then
+        echo "OPATCH_ARCHIVE_LOCAL exists: ${OPATCH_ARCHIVE_LOCAL}"
+    else
+        mkdir ${OPATCH_ARCHIVE_LOCAL}
+        echo "OPATCH_ARCHIVE_LOCAL created: ${OPATCH_ARCHIVE_LOCAL}"
+    fi
+}
+# Call test_script_prereqs
+test_script_prereqs
+
+#### END SECTION 0
+#### BEGIN SECTION 1
+
+# Check the OPatch version - return opatchRetVal (1 = valid version, 0 = invalid version)
+get_opatch_ver(){
+    # Parse the string text for the OPatch version - Strip out "OPatch Version:" and leave the version string
+    OPATCH_SUBSTR=$($ORACLE_HOME/OPatch/opatch version | grep "OPatch Version:" | cut -c 17- | xargs)
+
+    # Split the dotted OPatch version into array opatch_array to parse build specifics
+    IFS="." read -r -a opatch_array <<<"$OPATCH_SUBSTR"
+
+    # Check for version 12.2 / build 28 or later (12.2.x.x.28) to consider a valid version
+    ## As of 21c the OPatch version is still 12.2.x.  OPatch 13 exists for OMS/Middleware and at this time shouldn't be considered valid.
+    if [ "${opatch_array[0]}" -eq 12 ] && [ "${opatch_array[1]}" -eq 2 ] && [ "${opatch_array[4]}" -ge 28 ]
+    then
+        echo "OPatch Version: ${OPATCH_SUBSTR}"
+        opatchRetVal=1
+    else
+        echo "OPatch Version: ${OPATCH_SUBSTR}"
+        opatchRetVal=0
+    fi
+}
+
+# Call get_opatch_ver
+get_opatch_ver
+
+
+
+if [ $opatchRetVal == 1 ]
+then
+    echo "SUCCESS: Valid OPatch build (12.2.x.x.28 or later)"
+else
+    echo "OPatch version is not valid for patch archival.  Exiting."
+    exit
+fi
+### OPatch version validated
+#### END SECTION 1
+
+#### BEGIN SECTION 2
+
+# Check the contents of the $ORACLE_HOME/.patch_storage directory for patch cleanup candidates
+get_patch_storage(){
+    # Store the directory contents into patchStorageDir
+    patchStorageDir=$(find $ORACLE_HOME/.patch_storage/ -maxdepth 1 -type d -printf '%f\n')
+
+    # Cycle through the items:
+    for patchStorageName in ${patchStorageDir}
+    do
+        # Only consider items that contain a valid date (e.g. x_Jul_5_2021) in the 2nd-4th array items:
+        IFS="_" read -r -a patch_dir_item <<<"$patchStorageName"
+  
+        # Validate dates to ensure they are numeric (only successful rows will).
+        if [ -n "${patch_dir_item[1]}" ] && [ -n "${patch_dir_item[2]}" ] && [ -n "${patch_dir_item[3]}" ]
+        then
+            # Test the date for sanity
+            if [ "$(date -d "${patch_dir_item[1]}-${patch_dir_item[2]}-${patch_dir_item[3]}")" ]
+            then    
+                # Store the patch ID and the directory name into patchStorageArray
+                patchStorageArray[${patch_dir_item[0]}]="${patchStorageName}"
+            fi
+        fi
+    done
+}
+
+# Call get_patch_storage
+get_patch_storage
+
+## DEBUG - list of patch storage
+#echo "List of Patch Storage contents:"
+#for patch in "${!patchStorageArray[@]}"
+#do  
+#    printf "%s\n" "$patch = ${patchStorageArray[$patch]}"
+#done
+
+# Get the list of inactive patches from OPatch lsinventory -inactive
+get_opatch_inactive(){
+    OPATCH_INACTIVE_STR=$($ORACLE_HOME/OPatch/opatch lsinventory -inactive | grep "Patch description:")
+    for patch in ${OPATCH_INACTIVE_STR}
+    do
+        # Parse lines with a )" which will indicate it contains a Patch ID
+        if [[ "${patch}" == *")\""* ]] ;
+        then
+            # Strip out the leading (
+            patchID=${patch#"("}
+            # Strip out the trailing )"
+            patchID=${patchID%")\""}
+            # Store the Patch ID into $opatchInactiveArray
+            opatchInactiveArray[${#opatchInactiveArray[@]}]="${patchID}"
+        fi
+    done
+}
+
+# Call get_opatch_inactive
+get_opatch_inactive
+
+## Debug - list inactive patches
+#echo "List of inactive patches:"
+#echo "${opatchInactiveArray[*]}"
+
+get_opatch_cleanup_ids(){
+    # Compare $opatchInactiveArray to $patchStorageArray
+    ## Items in both (listed as inactive, and also locally on disk) should be processed through OPatch to archive.
+    for inactivePatch in ${opatchInactiveArray[*]}
+    do
+        ## DEBUG
+        #echo "Inactive Patch: " $inactivePatch
+        for patchStorageItem in "${!patchStorageArray[@]}"
+        do
+            if [ $inactivePatch -eq $patchStorageItem ]
+            then    
+                opatchCleanupArray[${#opatchCleanupArray[@]}]="${inactivePatch}"
+            fi
+        done
+    done
+    # Sanitize into a comma-separated list for OPatch input
+    opatchCleanupIdCsv=$(echo "${opatchCleanupArray[*]}" | tr -s '[:blank:]' ',')
+}
+# Call get_opatch_cleanup_ids
+get_opatch_cleanup_ids
+
+#### END SECTION 2
+#### BEGIN SECTION 3
+
+## DEBUG
+#echo "List of cleanup patch IDs:"
+#echo $opatchCleanupIdCsv
+
+# Execute OPatch util archive with the provided $opatchCleanupIdCsv and $OPATCH_ARCHIVE_LOCAL
+start_opatch_cleanup(){
+    if [ -n "${opatchCleanupIdCsv}" ]
+    then    
+        # Return starting space values
+        echo "Beginning /opt space                  : $(df -kh | grep "opt")"
+        echo "Beginning .patch_storage consumption: : $(du -cksh $ORACLE_HOME/.patch_storage | grep ".patch_storage")"
+
+        # Start opatch util archive
+        ## DEBUG - list the command to be executed:
+        #echo "${ORACLE_HOME}/OPatch/opatch util archive -patches ${opatchCleanupIdCsv} -archive_dir ${OPATCH_ARCHIVE_LOCAL}"
+        ${ORACLE_HOME}/OPatch/opatch util archive -patches ${opatchCleanupIdCsv} -archive_dir ${OPATCH_ARCHIVE_LOCAL}
+
+        # Return ending space values
+        echo "Ending /opt space                     :      $(df -kh | grep "opt")"
+        echo "Ending .patch_storage consumption     :      $(du -cksh $ORACLE_HOME/.patch_storage | grep ".patch_storage")"
+    fi
+}
+
+# Call start_opatch_cleanup if valid Patch IDs were identified for cleanup
+if [ -n "${opatchCleanupIdCsv}" ]
+then
+    echo "Starting OPatch Cleanup"
+    start_opatch_cleanup
+else
+    echo "No valid Patch IDs found for cleanup.  Skipping OPatch execution."
+fi
+
+#### END SECTION 4
+#### BEGIN SECTION 5
+
+# Compare the contents of $OPATCH_ARCHIVE_LOCAL to what it is in $OPATCH_ARCHIVE_GLOBAL
+## If the file exists in both GLOBAL and LOCAL, delete it from LOCAL
+## If the file exists only in LOCAL, move it to GLOBAL
+reconcile_local_archive(){
+    if [ $(find ${OPATCH_ARCHIVE_LOCAL} -type f | wc -l) -gt 0 ]
+    then
+        for zip in "${OPATCH_ARCHIVE_LOCAL}"/*;
+        do
+            # Parse the base filename
+            zipBase=$(basename "${zip}")
+            if [ -f "${OPATCH_ARCHIVE_GLOBAL}/${zipBase}" ]
+            then
+                # Delete from LOCAL
+                echo "File found: $(find ${OPATCH_ARCHIVE_LOCAL}/"${zipBase}")"
+                rm "${OPATCH_ARCHIVE_LOCAL}"/"${zipBase}"
+                echo "File deleted: ${OPATCH_ARCHIVE_LOCAL}/${zipBase}"
+            else
+                # Move from LOCAL to GLOBAL
+                mv "${OPATCH_ARCHIVE_LOCAL}"/"${zipBase}" "${OPATCH_ARCHIVE_GLOBAL}"/"${zipBase}}"
+                echo "File moved: " "${OPATCH_ARCHIVE_LOCAL}"/"${zipBase}" "to" "${ORACLE_ARCHIVE_GLOBAL}"/"${zipBase}"
+            fi
+        done
+    else
+        echo "No files found in OPATCH_ARCHIVE_LOCAL: ${OPATCH_ARCHIVE_LOCAL}.  Nothing to do."
+    fi
+}
+# Call reconcile_local_archive
+reconcile_local_archive
+
+#### END SECTION 5 (and script)
