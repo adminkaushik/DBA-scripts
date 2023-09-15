@@ -1,0 +1,4 @@
+ select * from v$recovery_area_usage;
+
+
+ALTER system  SET db_recovery_file_dest_size=4200M  scope=BOTH ;
