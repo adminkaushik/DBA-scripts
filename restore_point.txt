@@ -1,0 +1,12 @@
+create restore point CLEAN_DB guarantee flashback database;
+
+SQL> select current_scn from v$database;
+SQL> shutdown immediate;
+SQL> startup mount;
+SQL> select * from v$restore_point;
+SQL> flashback database to restore point CLEAN_DB;
+SQL> alter database open resetlogs;
+SQL> select current_scn from v$database;
+
+
+drop restore point CLEAN_DB;
