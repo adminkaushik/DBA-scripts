@@ -1,0 +1,129 @@
+Setup - this is done
+
+Install ODBC gateway
+
+Install mysql driver
+
+Configure odbc.ini, tnsnames.ora, listener.ora, init<>.ora
+
+Create LEO user in OATST (need to use a unicode database because of datatype issues in the source)
+
+Create db_link to LEO mysql database
+
+Create users for OBIEE team with proxy to LEO user
+
+ 
+
+Research - this is done
+
+Gather list of all tables, column names, datatypes, column size and create spread sheet to share with OBIEE team
+
+Convert one table that does not have any problematic columns to oatst
+
+ 
+
+Issues
+
+Any column that is a LONG or has a size bigger that what oracle supports needs to be converted to a clob (I think! this is true for LONGS for sure.)
+
+ 
+
+To convert the data
+
+I created a script that does a CTAS for all the tables and 23 tables were created, and 189 failed on 
+
+ORA-00997: illegal use of LONG datatype
+
+For the tables with LONG
+1.) Decide what datatype to assign each column that has a datatype that needs to be converted
+
+2.) Create the table in the oracle database
+
+3.) use PL/SQL to convert the data
+
+4.) Repeat 189 times to get every table
+
+ 
+
+Example:
+
+ 
+
+TABLE_NAME	COLUMN_NAME	DATA_TYPE	DATA_LENGTH	Oracle data type
+1804_FILES	FILE_ID	NUMBER	4	number
+1804_FILES	FILE_NAME	VARCHAR2	255	VARCHAR2
+1804_FILES	UPLOADED_BY	VARCHAR2	255	VARCHAR2
+1804_FILES	UPLOADED_DATE	VARCHAR2	255	VARCHAR2
+1804_FILES	FILE_SIZE	NUMBER	4	NUMBER
+1804_FILES	FILE_TYPE	VARCHAR2	255	VARCHAR2
+1804_FILES	FILE_COMMENTS	LONG	65535	LONG
+
+ 
+
+(this table name has to be changed from the source name because Oracle can't start with a number) 
+
+ 
+
+CREATE TABLE LEO_1804_FILES
+(
+  FILE_ID        NUMBER,
+  FILE_NAME      VARCHAR2(255 BYTE),
+  UPLOADED_BY    VARCHAR2(255 BYTE),
+  UPLOADED_DATE  VARCHAR2(255 BYTE),
+  FILE_SIZE      INTEGER,
+  FILE_TYPE      VARCHAR2(255 BYTE),
+  FILE_COMMENTS  CLOB
+)
+
+ 
+
+Then create and run the script to convert -
+
+ 
+
+DECLARE
+v1 "leonew"."1804_FILES"."FILE_ID"@LEO%TYPE; 
+v2 "leonew"."1804_FILES"."FILE_NAME"@LEO%TYPE; 
+v3 "leonew"."1804_FILES"."UPLOADED_BY"@LEO%TYPE; 
+v4 "leonew"."1804_FILES"."UPLOADED_DATE"@LEO%TYPE; 
+v5 "leonew"."1804_FILES"."FILE_SIZE"@LEO%TYPE; 
+v6 "leonew"."1804_FILES"."FILE_TYPE"@LEO%TYPE; 
+v7 "leonew"."1804_FILES"."FILE_COMMENTS"@LEO%TYPE;
+
+ 
+
+ 
+
+CURSOR C1 IS select "FILE_ID",
+"FILE_TYPE",
+"UPLOADED_BY",
+"UPLOADED_DATE",
+"FILE_SIZE",
+"FILE_TYPE",
+"FILE_COMMENTS"    from leonew."1804_FILES"@LEO;
+
+ 
+
+BEGIN 
+OPEN C1; 
+LOOP 
+FETCH C1 INTO v1,
+v2,
+v3,
+v4,
+v5,
+v6,
+v7 ; 
+EXIT WHEN C1%NOTFOUND; 
+INSERT INTO LEO.LEO_1804_FILES VALUES (v1,
+v2,
+v3,
+v4,
+v5,
+v6,
+v7); 
+END LOOP; 
+CLOSE C1; 
+END; 
+/ 
+commit;
