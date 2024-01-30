@@ -1,0 +1,12 @@
+Select * from v$controlfile_record_section where type ='REDO LOG';
+select * from v$log;
+
+select member from v$logfile;
+alter database add logfile group 3 ('/usr/local/oracle/data/gisd10/alist/redo03.dbf','/usr/local/oracle/data/reco/alist/redo03b.dbf') size 100m reuse;
+
+alter database drop logfile group x;
+
+SELECT * FROM V$LOGFILE;
+alter system switch logfile;
+alter system checkpoint;
+remove from os level
