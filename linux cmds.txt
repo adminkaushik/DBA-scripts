@@ -1,2 +1,4 @@
 Sort largest 20 files based on size in gb
 du -ah .  | sort -h -r | head -n 20
+
+du -sch * | sort -h | tail -20
