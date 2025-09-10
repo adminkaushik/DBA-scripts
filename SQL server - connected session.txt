@@ -1,0 +1,73 @@
+USE master;
+SELECT	Instance		= @@SERVERNAME
+	,	HostName		= s.host_name
+	,	NetworkAddr		= c.client_net_address
+	,	App				= s.program_name
+	,	Interface		= s.client_interface_name
+	,	LoginName		= s.login_name
+	,	LoginTime		= s.login_time
+	,	LastReqStart	= s.last_request_start_time
+	,	DatabaseName	= d.name
+/*
+	,	CPU_ms			= s.cpu_time
+	,	PageReads		= s.logical_reads
+	,	PhysReads		= s.reads
+	,	PhysWrites		= s.writes
+	,	Mem_KB			= s.memory_usage * 8
+	,	Rows			= s.row_count
+--*/
+	,	SPID			= s.session_id
+	,	ExecCtx			= t.exec_context_id
+	,	BlockBy			= w.blocking_session_id
+	,	BlockByCtx		= w.blocking_exec_context_id
+	,	OpenTrans		= r.open_transaction_count
+	,	ReqStatus		= r.status
+	,	ReqCommand		= r.command
+	,	TaskState		= t.task_state
+	,	WaitTime_ms		= w.wait_duration_ms
+	,	WaitType		= w.wait_type
+--	,	WaitResource	= r.wait_resource
+	,	WaitResrceDesc	= w.resource_description
+	,	DOP				= r.dop
+	,	LastCmdBatch	= q.text
+	,	ExecPlan		= CONVERT(XML, x.query_plan)
+FROM	sys.dm_exec_sessions s
+LEFT OUTER JOIN
+		sys.databases d
+ON		s.database_id = d.database_id
+LEFT OUTER JOIN 
+		sys.dm_exec_connections c
+ON		s.session_id = c.session_id
+OUTER APPLY
+		sys.dm_exec_sql_text(c.most_recent_sql_handle) q
+LEFT OUTER JOIN 
+		sys.dm_exec_requests r
+ON		s.session_id = r.session_id
+LEFT OUTER JOIN 
+		sys.dm_exec_query_memory_grants m
+	ON	r.session_id = m.session_id
+	AND	r.request_id = m.request_id
+LEFT OUTER JOIN 
+		sys.dm_os_tasks t
+ON		r.session_id = t.session_id 
+	AND	r.request_id = t.request_id
+OUTER APPLY
+		(SELECT	TOP (1) /* longest wait for task */
+				owt.*
+		FROM	sys.dm_os_waiting_tasks owt
+		WHERE	owt.waiting_task_address = t.task_address
+		ORDER BY 
+				owt.wait_duration_ms DESC
+		) w
+OUTER APPLY 
+		sys.dm_exec_text_query_plan (r.plan_handle, r.statement_start_offset, r.statement_end_offset) x
+WHERE	s.session_Id NOT IN (@@SPID)
+	AND	s.is_user_process = 1
+	AND	s.login_name <> 'NT SERVICE\SQLTELEMETRY'
+ORDER BY
+		s.is_user_process DESC
+	,	s.last_request_start_time DESC
+	,	s.login_name
+	,	s.session_id
+	,	t.exec_context_id
+	;
